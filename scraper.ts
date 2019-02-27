@@ -119,9 +119,16 @@ function getArea(rectangle: Rectangle) {
 
 function formatAddress(address: string) {
     address = address.trim();
-    if (/^\d,\d\d\d/.test(address))
-        address = address.substring(0, 1) + address.substring(2);  // remove the comma
-    return address;
+    if (address.startsWith("LOT:"))
+        return "";
+    else if (address.startsWith("No Residential Address"))
+        return "";
+    else if (/^\d,\d\d\d/.test(address))
+        return address.substring(0, 1) + address.substring(2);  // remove the comma
+    else if (/^\d\d,\d\d\d/.test(address))
+        return address.substring(0, 2) + address.substring(3);  // remove the comma
+    else
+        return address;
 }
 
 // Parses the details from the elements associated with a single page of the PDF (corresponding
@@ -139,6 +146,13 @@ function parseApplicationElements(elements: Element[], informationUrl: string) {
     let propertyDetailsHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "propertydetails:");
     let referralsHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "referrals");
     let totalDevelopmentCostsHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "totaldevelopmentcosts:");
+
+    
+    if (applicationNumberHeadingElement === undefined) {
+        let elementSummary = elements.map(element => `[${element.text}]`).join("");
+        console.log(`Ignoring the page because the "Dev App No." text is missing.  Elements: ${elementSummary}`);
+        return undefined;
+    }
 
     // Get the application number.
 
@@ -307,7 +321,7 @@ async function main() {
     let database = await initializeDatabase();
 
     // Read the files containing all possible street names, street suffixes, suburb names and
-    // hundred names.
+    // hundred names.  Note that these are not currently used.
 
     StreetNames = {};
     for (let line of fs.readFileSync("streetnames.txt").toString().replace(/\r/g, "").trim().split("\n")) {
