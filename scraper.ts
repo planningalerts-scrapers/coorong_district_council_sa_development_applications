@@ -194,7 +194,7 @@ function parseApplicationElements(elements: Element[], informationUrl: string) {
         x: applicationNumberElement.x + applicationNumberElement.width,
         y: applicationNumberElement.y,
         width: Number.MAX_VALUE,
-        height: ((applicantHeadingElement === undefined) ? (applicationNumberElement.height * 2) : applicantHeadingElement.y) - applicationNumberElement.y
+        height: (applicantHeadingElement === undefined) ? (applicationNumberElement.height * 2) : (applicantHeadingElement.y - applicationNumberElement.y)
     };
     let description = elements.filter(element => getPercentageOfElementInRectangle(element, descriptionBounds) > 10).map(element => element.text).join(" ").trim().replace(/\s\s+/g, " ");
 
