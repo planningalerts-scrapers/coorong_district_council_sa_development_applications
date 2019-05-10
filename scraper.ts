@@ -508,7 +508,7 @@ async function main() {
         if (global.gc)
             global.gc();
 
-        console.log(`Inserting development applications into the database.`);
+        console.log(`Saving development applications to the database.`);
         for (let developmentApplication of developmentApplications)
             await insertRow(database, developmentApplication);
     }
