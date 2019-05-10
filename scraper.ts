@@ -157,10 +157,23 @@ function formatAddress(address: string) {
     let fallbackAddress = (postCode === undefined) ? address : [ ...tokens, state, postCode].join(" ");
 
     // Pop tokens from the end of the array until a valid suburb name is encountered (allowing
-    // for a few spelling errors).
+    // for a few spelling errors).  Note that this starts by examining for longer matches
+    // (consisting of four tokens) before examining shorter matches.  This approach ensures
+    // that the following address:
+    //
+    //     2,800 Woods Well RD COLEBATCH 5266
+    //
+    // is correctly converted to the following address:
+    //
+    //     2800 WOODS WELL ROAD, COLEBATCH SA 5266
+    //
+    // rather than (incorrectly) to the following address (notice that the street name has "BELL"
+    // instead of "WELL" because there actually is a street named "BELL ROAD").
+    //
+    //     2800 Woods BELL ROAD, COLEBATCH SA 5266
 
     let suburbName = undefined;
-    for (let index = 1; index <= 4; index++) {
+    for (let index = 4; index >= 1; index--) {
         let suburbNameMatch = <string>didYouMean(tokens.slice(-index).join(" "), Object.keys(SuburbNames), { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 1, trimSpaces: true });
         if (suburbNameMatch !== null) {
             suburbName = SuburbNames[suburbNameMatch];
@@ -182,10 +195,11 @@ function formatAddress(address: string) {
         tokens.push(streetSuffix);  // add back the expanded street suffix
 
     // Pop tokens from the end of the array until a valid street name is encountered (allowing
-    // for a few spelling errors).
+    // for a few spelling errors).  Similar to the examination of suburb names, this examines
+    // longer matches before examining shorter matches (for the same reason).
 
     let streetName = undefined;
-    for (let index = 1; index <= 5; index++) {
+    for (let index = 5; index >= 1; index--) {
         let streetNameMatch = <string>didYouMean(tokens.slice(-index).join(" "), Object.keys(StreetNames), { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 1, trimSpaces: true });
         if (streetNameMatch !== null) {
             streetName = streetNameMatch;
