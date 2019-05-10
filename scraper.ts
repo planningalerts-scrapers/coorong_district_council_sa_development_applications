@@ -45,7 +45,7 @@ async function initializeDatabase() {
 
 async function insertRow(database, developmentApplication) {
     return new Promise((resolve, reject) => {
-        let sqlStatement = database.prepare("insert or ignore into [data] values (?, ?, ?, ?, ?, ?, ?, ?)");
+        let sqlStatement = database.prepare("insert or replace into [data] values (?, ?, ?, ?, ?, ?, ?, ?)");
         sqlStatement.run([
             developmentApplication.applicationNumber,
             developmentApplication.address,
@@ -60,10 +60,7 @@ async function insertRow(database, developmentApplication) {
                 console.error(error);
                 reject(error);
             } else {
-                if (this.changes > 0)
-                    console.log(`    Inserted: application \"${developmentApplication.applicationNumber}\" with address \"${developmentApplication.address}\", description \"${developmentApplication.description}\", legal description \"${developmentApplication.legalDescription}\" and received date \"${developmentApplication.receivedDate}\" into the database.`);
-                else
-                    console.log(`    Skipped: application \"${developmentApplication.applicationNumber}\" with address \"${developmentApplication.address}\", description \"${developmentApplication.description}\", legal description \"${developmentApplication.legalDescription}\" and received date \"${developmentApplication.receivedDate}\" because it was already present in the database.`);
+                console.log(`    Saved application \"${developmentApplication.applicationNumber}\" with address \"${developmentApplication.address}\", description \"${developmentApplication.description}\", legal description \"${developmentApplication.legalDescription}\" and received date \"${developmentApplication.receivedDate}\" to the database.`);
                 sqlStatement.finalize();  // releases any locks
                 resolve(row);
             }
@@ -119,16 +116,113 @@ function getArea(rectangle: Rectangle) {
 
 function formatAddress(address: string) {
     address = address.trim();
-    if (address.startsWith("LOT:"))
+    if (address.startsWith("LOT:") || address.startsWith("No Residential Address"))
         return "";
-    else if (address.startsWith("No Residential Address"))
-        return "";
-    else if (/^\d,\d\d\d/.test(address))
-        return address.substring(0, 1) + address.substring(2);  // remove the comma
+
+    // Remove the comma in house numbers larger than 1000.  For example, the following addresses:
+    //
+    //     4,665 Princes HWY MENINGIE 5264
+    //     11,287 Princes HWY SALT CREEK 5264
+    //
+    // would be converted to the following:
+    //
+    //     4665 Princes HWY MENINGIE 5264
+    //     11287 Princes HWY SALT CREEK 5264
+
+    if (/^\d,\d\d\d/.test(address))
+        address = address.substring(0, 1) + address.substring(2);
     else if (/^\d\d,\d\d\d/.test(address))
-        return address.substring(0, 2) + address.substring(3);  // remove the comma
+        address = address.substring(0, 2) + address.substring(3);
+
+    let tokens = address.split(" ");
+
+    let postCode = undefined;
+    let token = tokens.pop();
+    if (/^\d\d\d\d$/.test(token))
+        postCode = token;
     else
-        return address;
+        tokens.push(token);
+
+    // Ensure that a state code is added before the post code if a state code is not present.
+
+    let state = "SA";
+    token = tokens.pop();
+    if ([ "ACT", "NSW", "NT", "QLD", "SA", "TAS", "VIC", "WA" ].includes(token.toUpperCase()))
+        state = token.toUpperCase();
+    else
+        tokens.push(token);
+
+    // Construct a fallback address to be used if the suburb name cannot be determined later.
+
+    let fallbackAddress = (postCode === undefined) ? address : [ ...tokens, state, postCode].join(" ");
+
+    // Pop tokens from the end of the array until a valid suburb name is encountered (allowing
+    // for a few spelling errors).
+
+    let suburbName = undefined;
+    for (let index = 1; index <= 4; index++) {
+        let suburbNameMatch = <string>didYouMean(tokens.slice(-index).join(" "), Object.keys(SuburbNames), { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 1, trimSpaces: true });
+        if (suburbNameMatch !== null) {
+            suburbName = SuburbNames[suburbNameMatch];
+            tokens.splice(-index, index);  // remove elements from the end of the array           
+            break;
+        }
+    }
+
+    // Expand any street suffix (for example, this converts "ST" to "STREET").
+
+    token = tokens.pop();
+    let streetSuffix = StreetSuffixes[token.toUpperCase()];
+    if (streetSuffix === undefined)
+        streetSuffix = Object.values(StreetSuffixes).find(streetSuffix => streetSuffix === token.toUpperCase());  // the street suffix is already expanded
+
+    if (streetSuffix === undefined)
+        tokens.push(token);  // unrecognised street suffix
+    else
+        tokens.push(streetSuffix);  // add back the expanded street suffix
+
+    // Pop tokens from the end of the array until a valid street name is encountered (allowing
+    // for a few spelling errors).
+
+    let streetName = undefined;
+    for (let index = 1; index <= 5; index++) {
+        let streetNameMatch = <string>didYouMean(tokens.slice(-index).join(" "), Object.keys(StreetNames), { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 1, trimSpaces: true });
+        if (streetNameMatch !== null) {
+            streetName = streetNameMatch;
+            let suburbNames = StreetNames[streetNameMatch];
+            tokens.splice(-index, index);  // remove elements from the end of the array           
+
+            // If the suburb was not determined earlier then attempt to obtain the suburb based
+            // on the street (ie. if there is only one suburb associated with the street).  For
+            // example, this would automatically add the suburb to "22 Jefferson CT 5263",
+            // producing the address "22 JEFFERSON COURT, WELLINGTON EAST SA 5263".
+
+            if (suburbName === undefined && suburbNames.length === 1)
+                suburbName = SuburbNames[suburbNames[0]];
+
+            break;
+        }
+    }    
+
+    // If a post code was included in the original address then use it to override the post code
+    // included in the suburb name (because the post code in the original address is more likely
+    // to be correct).
+
+    if (postCode !== undefined && suburbName !== undefined)
+        suburbName = suburbName.replace(/\s+\d\d\d\d$/, " " + postCode);
+
+    // Reconstruct the address with a comma between the street address and the suburb.
+
+    if (suburbName === undefined || suburbName.trim() === "")
+        address = fallbackAddress;
+    else {
+        if (streetName !== undefined && streetName.trim() !== "")
+            tokens.push(streetName);
+        let streetAddress = tokens.join(" ").trim();
+        address = streetAddress + (streetAddress === "" ? "" : ", ") + suburbName;
+    }
+
+    return address;
 }
 
 // Parses the details from the elements associated with a single page of the PDF (corresponding
