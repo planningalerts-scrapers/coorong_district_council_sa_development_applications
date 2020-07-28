@@ -17,7 +17,7 @@ import didYouMean, * as didyoumean from "didyoumean2";
 
 sqlite3.verbose();
 
-const DevelopmentApplicationsUrl = "https://www.coorong.sa.gov.au/page.aspx?u=2084&year={0}";
+const DevelopmentApplicationsUrl = "https://www.coorong.sa.gov.au/council-services/building-and-development/development-register?num_ranks=200";
 const CommentUrl = "mailto:council@coorong.sa.gov.au";
 
 declare const process: any;
@@ -455,50 +455,32 @@ async function main() {
     for (let line of fs.readFileSync("hundrednames.txt").toString().replace(/\r/g, "").trim().split("\n"))
         HundredNames.push(line.trim().toUpperCase());
 
-    // Read the main page of development applications.
+    // Read the page of development application PDFs.
 
     let year = moment().format("YYYY");
-    let developmentApplicationsUrl = DevelopmentApplicationsUrl.replace(/\{0\}/g, encodeURIComponent(year));
 
-    console.log(`Retrieving page: ${developmentApplicationsUrl}`);
+    console.log(`Retrieving page: ${DevelopmentApplicationsUrl}`);
 
-    let body = await request({ url: developmentApplicationsUrl, rejectUnauthorized: false, proxy: process.env.MORPH_PROXY });
+    let body = await request({ url: DevelopmentApplicationsUrl, rejectUnauthorized: false, proxy: process.env.MORPH_PROXY });
     await sleep(2000 + getRandom(0, 5) * 1000);
     let $ = cheerio.load(body);
 
     let pdfUrls: string[] = [];
-    for (let element of $("td.uContentListDesc a").get()) {
-        let pdfUrl = new urlparser.URL(element.attribs.href, developmentApplicationsUrl).href
+    for (let element of $("li.result-item div.result-item__url").get()) {
+        let pdfUrl = $(element).text();
         if (pdfUrl.toLowerCase().includes(".pdf"))
             if (!pdfUrls.some(url => url === pdfUrl))
                 pdfUrls.push(pdfUrl);
     }
 
-    // Read the development applications page for another random year.
-
-    let randomYear = getRandom(2008, moment().year() + 1).toString();
-    let randomDevelopmentApplicationsUrl = DevelopmentApplicationsUrl.replace(/\{0\}/g, encodeURIComponent(randomYear));
-
-    body = await request({ url: randomDevelopmentApplicationsUrl, rejectUnauthorized: false, proxy: process.env.MORPH_PROXY });
-    await sleep(2000 + getRandom(0, 5) * 1000);
-    $ = cheerio.load(body);
-
-    let randomPdfUrls: string[] = [];
-    for (let element of $("td.uContentListDesc a").get()) {
-        let pdfUrl = new urlparser.URL(element.attribs.href, randomDevelopmentApplicationsUrl).href
-        if (pdfUrl.toLowerCase().includes(".pdf"))
-            if (!randomPdfUrls.some(url => url === pdfUrl))
-                randomPdfUrls.push(pdfUrl);
-    }
-
     // Always parse the most recent PDF file and randomly select one other PDF file to parse.
 
-    if (pdfUrls.length === 0 && randomPdfUrls.length === 0) {
-        console.log("No PDF files were found on the pages examined.");
+    if (pdfUrls.length === 0) {
+        console.log("No PDF files were found on the page.");
         return;
     }
 
-    console.log(`Found ${pdfUrls.length + randomPdfUrls.length} PDF file(s).  Selecting two to parse.`);
+    console.log(`Found ${pdfUrls.length} PDF file(s).  Selecting two to parse.`);
 
     // Select the most recent PDF.  And randomly select one other PDF (avoid processing all PDFs
     // at once because this may use too much memory, resulting in morph.io terminating the current
@@ -506,8 +488,8 @@ async function main() {
 
     let selectedPdfUrls: string[] = [];
     selectedPdfUrls.push(pdfUrls.shift());  // the most recent PDF
-    if (randomPdfUrls.length > 0)
-        selectedPdfUrls.push(randomPdfUrls[getRandom(0, randomPdfUrls.length)]);  // a randomly selected PDF from a random year
+    if (pdfUrls.length > 0)
+        selectedPdfUrls.push(pdfUrls[getRandom(0, pdfUrls.length)]);  // a randomly selected PDF
     if (getRandom(0, 2) === 0)
         selectedPdfUrls.reverse();
 
